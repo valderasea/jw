@@ -30,30 +30,26 @@ local routes = {}
 -- ============================================================
 
 -- HipHeight avatar waktu RECORD (isi dengan HipHeight avatar yg dipakai saat rekam)
-local DEFAULT_HEIGHT = 2 -- biasanya 2 di avatar normal R15
+local DEFAULT_HEIGHT = 2
+-- 4.882498383522034 
 
--- Ambil tinggi avatar sekarang (HANYA pakai HipHeight)
+-- Ambil tinggi avatar sekarang
 local function getCurrentHeight()
     local char = player.Character or player.CharacterAdded:Wait()
     local humanoid = char:WaitForChild("Humanoid")
     return humanoid.HipHeight
 end
 
--- Sesuaikan route berdasarkan selisih tinggi avatar
+-- Adjustment posisi sesuai tinggi avatar
 local function adjustRoute(frames)
     local adjusted = {}
     local currentHeight = getCurrentHeight()
-    local offsetY = currentHeight - DEFAULT_HEIGHT
-
+    local offsetY = currentHeight - DEFAULT_HEIGHT  -- full offset
     for _, cf in ipairs(frames) do
-        local pos = cf.Position
-        local rot = cf - cf.Position
-
-        local newPos = Vector3.new(pos.X, pos.Y + offsetY, pos.Z)
-        table.insert(adjusted, CFrame.new(newPos) * rot)
-    end
-
-    return adjusted
+    local pos = cf.Position
+    local newPos = Vector3.new(pos.X, pos.Y + offsetY, pos.Z)
+    local newCF = CFrame.new(newPos, (newPos + cf.LookVector))
+    table.insert(adjusted, newCF)
 end
 
 
