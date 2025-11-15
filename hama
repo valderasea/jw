@@ -1,0 +1,312 @@
+-- ============================================================
+-- CORE (fungsi asli + log/notify)
+-- ============================================================
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local hrp = nil
+local Packs = {
+    lucide = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/Footagesus/Icons/refs/heads/main/lucide/dist/Icons.lua"))(),
+    craft  = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/Footagesus/Icons/refs/heads/main/craft/dist/Icons.lua"))(),
+    geist  = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/Footagesus/Icons/refs/heads/main/geist/dist/Icons.lua"))(),
+}
+
+local function refreshHRP(char)
+    if not char then
+        char = player.Character or player.CharacterAdded:Wait()
+    end
+    hrp = char:WaitForChild("HumanoidRootPart")
+end
+if player.Character then refreshHRP(player.Character) end
+player.CharacterAdded:Connect(refreshHRP)
+
+local frameTime = 1/30
+local playbackRate = 1.0
+local isRunning = false
+local routes = {}
+
+-- ============================================================
+-- ROUTE (CFrame Recording)
+-- ============================================================
+local DEFAULT_HEIGHT = 2
+
+local function getCurrentHeight()
+    local char = player.Character or player.CharacterAdded:Wait()
+    local humanoid = char:WaitForChild("Humanoid")
+    return humanoid.HipHeight
+end
+
+local function adjustRoute(frames)
+    local adjusted = {}
+    local currentHeight = getCurrentHeight()
+    local offsetY = currentHeight - DEFAULT_HEIGHT
+    for _, cf in ipairs(frames) do
+        local pos = cf.Position
+        local newPos = Vector3.new(pos.X, pos.Y + offsetY, pos.Z)
+        local newCF = CFrame.new(newPos, (newPos + cf.LookVector))
+        table.insert(adjusted, newCF)
+    end
+    return adjusted
+end
+
+local function removeDuplicateFrames(frames, tolerance)
+    tolerance = tolerance or 0.01
+    if #frames < 2 then return frames end
+    local newFrames = {frames[1]}
+    for i = 2, #frames do
+        local prev = frames[i-1]
+        local curr = frames[i]
+        local posDiff = (prev.Position - curr.Position).Magnitude
+        if posDiff > tolerance then
+            table.insert(newFrames, curr)
+        end
+    end
+    return newFrames
+end
+
+local intervalFlip = false
+
+local function applyIntervalRotation(cf)
+    if intervalFlip then
+        local pos = cf.Position
+        return CFrame.new(pos) * CFrame.Angles(0, math.pi, 0)
+    end
+    return cf
+end
+
+local function loadRoute(url)
+    local ok, result = pcall(function()
+        return loadstring(game:HttpGet(url))()
+    end)
+    if ok and type(result) == "table" then
+        local cleaned = removeDuplicateFrames(result, 0.01)
+        return adjustRoute(cleaned)
+    else
+        warn("Gagal load:", url)
+        return {}
+    end
+end
+
+-- ============================================================
+-- ⛰️ MAP LIST (5 MAP Contoh) — BAGIAN TAMBAHAN
+-- ============================================================
+local MAPLIST = {
+    ["MAP 1 — BASE → SUMMIT"]  = "https://raw.githubusercontent.com/LlyXCode/FREESTYLE/refs/heads/main/01.lua",
+    ["MAP 2 — CAVE ROUTE"]     = "https://raw.githubusercontent.com/LlyXCode/FREESTYLE/refs/heads/main/02.lua",
+    ["MAP 3 — FOREST RUN"]     = "https://raw.githubusercontent.com/LlyXCode/FREESTYLE/refs/heads/main/03.lua",
+    ["MAP 4 — CLIFFSIDE"]      = "https://raw.githubusercontent.com/LlyXCode/FREESTYLE/refs/heads/main/04.lua",
+    ["MAP 5 — VOLCANO"]        = "https://raw.githubusercontent.com/LlyXCode/FREESTYLE/refs/heads/main/05.lua",
+}
+
+-- Default route = Map 1
+routes = {
+    {"BASE → SUMMIT", loadRoute(MAPLIST["MAP 1 — BASE → SUMMIT"])},
+}
+
+-- ============================================================
+-- CORE LERP
+-- ============================================================
+local function lerpCF(fromCF, toCF)
+    fromCF = applyIntervalRotation(fromCF)
+    toCF = applyIntervalRotation(toCF)
+
+    local duration = frameTime / math.max(0.05, playbackRate)
+    local t = 0
+    while t < duration do
+        if not isRunning then break end
+        local dt = task.wait()
+        t += dt
+        local alpha = math.min(t/duration, 1)
+        if hrp then
+            hrp.CFrame = fromCF:Lerp(toCF, alpha)
+        end
+    end
+end
+
+local notify = function() end
+
+local function logAndNotify(a,b) print(a,b) notify(a,b,3) end
+
+-- ============================================================
+-- Autowalk Logic
+-- ============================================================
+local VirtualUser = game:GetService("VirtualUser")
+local bypassActive = false
+local antiIdleConn
+
+local function respawnPlayer()
+    player.Character:BreakJoints()
+end
+
+local function getNearestFrameIndex(frames)
+    if not hrp then return 1 end
+    local nearest = 1
+    local dist = math.huge
+    for i,cf in ipairs(frames) do
+        local d = (cf.Position - hrp.Position).Magnitude
+        if d < dist then
+            dist = d
+            nearest = i
+        end
+    end
+    return math.max(1, nearest)
+end
+
+local function runRouteOnce()
+    if #routes == 0 then return end
+    isRunning = true
+
+    local frames = routes[1][2]
+    local startIdx = getNearestFrameIndex(frames)
+
+    for i = startIdx, #frames - 1 do
+        if not isRunning then break end
+        lerpCF(frames[i], frames[i+1])
+    end
+
+    isRunning = false
+end
+
+local function runSpecificRoute(idx)
+    if not routes[idx] then return end
+    isRunning = true
+
+    local frames = routes[idx][2]
+    local startIdx = getNearestFrameIndex(frames)
+    for i = startIdx, #frames - 1 do
+        if not isRunning then break end
+        lerpCF(frames[i], frames[i+1])
+    end
+
+    isRunning = false
+end
+
+local function stopRoute()
+    isRunning = false
+    notify("Stopped", "Semua route dihentikan!", 2)
+end
+
+-- ============================================================
+-- UI WindUI
+-- ============================================================
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
+local Window = WindUI:CreateWindow({
+    Title = "ValL A.W",
+    Icon = "lucide:mountain-snow",
+    Author = "Valdera",
+    Folder = "ValL_AW",
+    Theme = "Midnight",
+})
+
+notify = function(title, content, duration)
+    WindUI:Notify({
+        Title = title,
+        Content = content or "",
+        Duration = duration or 3,
+    })
+end
+
+local MainTab = Window:Tab({
+    Title = "Autowalk",
+    Icon = "lucide:map",
+    Default = true
+})
+
+local SettingsTab = Window:Tab({
+    Title = "Tools",
+    Icon = "lucide:settings",
+})
+
+-- ============================================================
+-- SPEED + INTERVAL FLIP
+-- ============================================================
+local speeds = {}
+for v = 0.25, 3, 0.25 do
+    table.insert(speeds, string.format("%.2fx",v))
+end
+
+MainTab:Dropdown({
+    Title = "Speed",
+    Values = speeds,
+    Value = "1.00x",
+    Callback = function(opt)
+        playbackRate = tonumber(opt:match("([%d%.]+)"))
+        notify("Speed", opt, 2)
+    end
+})
+
+MainTab:Toggle({
+    Title = "Interval Flip",
+    Value = false,
+    Callback = function(v)
+        intervalFlip = v
+        notify("Interval Flip", v and "Aktif" or "Nonaktif", 2)
+    end
+})
+
+-- ============================================================
+-- [[ MAP LIST SYSTEM ]] — Bagian tambahan
+-- ============================================================
+MainTab:Section({ Title = "Pilih Map" })
+
+local mapNames = {}
+for name,_ in pairs(MAPLIST) do table.insert(mapNames, name) end
+table.sort(mapNames)
+
+MainTab:Dropdown({
+    Title = "List Map Autowalk",
+    Icon = "lucide:map",
+    Values = mapNames,
+    Value = mapNames[1],
+    Callback = function(selected)
+        routes = {
+            { selected, loadRoute(MAPLIST[selected]) }
+        }
+        notify("Map Changed", selected, 2)
+    end
+})
+
+-- ============================================================
+-- ACTION BUTTONS
+-- ============================================================
+MainTab:Button({
+    Title = "START (Nearest CP)",
+    Icon = "lucide:play",
+    Callback = function()
+        pcall(runRouteOnce)
+    end
+})
+
+MainTab:Button({
+    Title = "STOP",
+    Icon = "lucide:stop-circle",
+    Callback = function()
+        pcall(stopRoute)
+    end
+})
+
+-- ============================================================
+-- Tools Tab
+-- ============================================================
+SettingsTab:Slider({
+    Title = "WalkSpeed",
+    Value = {Min=10, Max=400, Default=16},
+    Callback = function(v)
+        if player.Character and player.Character:FindFirstChild("Humanoid") then
+            player.Character.Humanoid.WalkSpeed = v
+        end
+    end
+})
+
+SettingsTab:Slider({
+    Title = "JumpPower",
+    Value = {Min=10, Max=400, Default=50},
+    Callback = function(v)
+        if player.Character and player.Character:FindFirstChild("Humanoid") then
+            player.Character.Humanoid.JumpPower = v
+        end
+    end
+})
+
+notify("ValL A.W", "Loaded successfully!", 3)
