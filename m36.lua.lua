@@ -7,7 +7,7 @@ local hrp
 
 
 local ROUTE_LINKS = {
-    "https://raw.githubusercontent.com/sukarsisaheb-dev/Frestel/refs/heads/main/Frestel.lua",
+    "https://raw.githubusercontent.com/4kbarrasyii/Mount-Runia/refs/heads/main/ALLCP.lua",
 }
 
 
